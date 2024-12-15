@@ -151,12 +151,13 @@ class MonthlyKharcha:
             "This month's total expenses", 
             0)
         
-        outstanding_card = self._create_stat_card(
+        largest_settlement_card = self._create_stat_card(
             stats_frame, 
-            "Outstanding Balances", 
+            "Largest Pending Settlement", 
             "₨ 0",
-            "Total unsettled amounts", 
+            "Highest amount to be settled", 
             1)
+        self.largest_settlement_label = largest_settlement_card.winfo_children()[0].winfo_children()[1]  # Get the amount label
         
         # Quick Actions Section with modern design
         actions_frame = ttk.LabelFrame(main_frame, 
@@ -482,11 +483,24 @@ class MonthlyKharcha:
                 for person in sharing_people:
                     balances[person] -= share_per_person
             
+            # Find largest pending settlement
+            largest_settlement = 0
+            for name, balance in balances.items():
+                if abs(balance) > largest_settlement:
+                    largest_settlement = abs(balance)
+            
+            # Update largest settlement display with color coding
+            if hasattr(self, 'largest_settlement_label'):
+                self.largest_settlement_label.config(
+                    text=f"₨ {largest_settlement:,.2f}",
+                    foreground="red" if largest_settlement > 0 else self.colors['primary']
+                )
+            
             # Update balance display
             for name, balance in balances.items():
                 if name in self.balance_labels:
                     color = "green" if balance >= 0 else "red"
-                    formatted_balance = f"₨ {abs(balance):,.2f}"  # Fix formatting
+                    formatted_balance = f"₨ {abs(balance):,.2f}"
                     self.balance_labels[name].config(
                         text=formatted_balance,
                         foreground=color
@@ -1384,7 +1398,7 @@ class MonthlyKharcha:
                     
                     total = archive_data['month_summary']['total_expenses']
                     ttk.Label(header_frame,
-                             text=f"Total: �� {total:,.2f}",
+                             text=f"Total: ₨ {total:,.2f}",
                              style="Amount.TLabel").pack(side='right', padx=10)
                     
                     # Action buttons
