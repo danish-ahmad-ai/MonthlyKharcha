@@ -40,8 +40,10 @@ class MonthlyKharcha:
         self.data_dir = Path.home() / "MonthlyKharcha"
         self.data_dir.mkdir(exist_ok=True)
         self.roommates = ["Danish", "Umair", "Nisar", "Shahzaib"]
-        self.categories = ["Food", "Rent", "Electricity", "Internet", 
-                          "Groceries", "Room Supplies", "Other"]
+        self.categories = [
+            "Food", "Rent", "Electricity", "Internet", 
+            "Gas", "Groceries", "Room Supplies", "Other"  # Added Gas category
+        ]
         
         self._expense_cache = {}
         self._balance_cache = {}
@@ -522,7 +524,8 @@ class MonthlyKharcha:
             'shared_expenses': {
                 'rent': 0,
                 'electricity': 0,
-                'internet': 0
+                'internet': 0,
+                'gas': 0  # Added Gas to shared expenses
             },
             'food_sharing': ["Danish", "Umair", "Nisar"],
             'balances': {name: 0 for name in self.roommates}
