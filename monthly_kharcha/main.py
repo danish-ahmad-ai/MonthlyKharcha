@@ -1056,34 +1056,51 @@ class MonthlyKharcha:
             messagebox.showerror("Error", str(e))
     
     def calculate_summary(self):
-        category_totals = {category: 0 for category in self.categories}
+        """Generate a clear and focused summary of expenses and balances"""
+        summary = "Monthly Summary\n" + "="*30 + "\n\n"
+        
+        # Total expenses for the month
+        total_expenses = sum(expense['amount'] for expense in self.current_data['expenses'])
+        summary += f"Total Monthly Expenses: ₨ {total_expenses:,.2f}\n\n"
+        
+        # Per person payment breakdown
+        summary += "Payment Breakdown\n" + "-"*30 + "\n"
+        person_payments = {name: 0 for name in self.roommates}
+        person_shares = {name: 0 for name in self.roommates}
+        
+        for expense in self.current_data['expenses']:
+            # Add to total payments
+            person_payments[expense['paid_by']] += expense['amount']
+            
+            # Calculate and add shares
+            share = expense['amount'] / len(expense['shared_between'])
+            for person in expense['shared_between']:
+                person_shares[person] += share
+        
+        # Show each person's payments and shares
+        for person in self.roommates:
+            paid = person_payments[person]
+            share = person_shares[person]
+            balance = paid - share
+            
+            summary += f"\n{person}:\n"
+            summary += f"  Total Paid: ₨ {paid:,.2f}\n"
+            summary += f"  Fair Share: ₨ {share:,.2f}\n"
+            if balance > 0:
+                summary += f"  To Receive: ₨ {balance:,.2f}\n"
+            else:
+                summary += f"  To Pay: ₨ {abs(balance):,.2f}\n"
+        
+        # Category breakdown
+        summary += "\nCategory Breakdown\n" + "-"*30 + "\n"
+        category_totals = defaultdict(float)
         for expense in self.current_data['expenses']:
             category_totals[expense['category']] += expense['amount']
         
-        summary = "Monthly Summary\n" + "="*20 + "\n\n"
-        
-        summary += "Category-wise Expenses:\n"
-        summary += "-"*20 + "\n"
-        for category, total in category_totals.items():
-            summary += f"{category}: ₨ {total:.2f}\n"
-        
-        summary += "\nPer Person Balances:\n"
-        summary += "-"*20 + "\n"
-        for name, balance in self.current_data['balances'].items():
-            status = "to receive" if balance > 0 else "to pay"
-            summary += f"{name}: ₨ {abs(balance):.2f} ({status})\n"
-        
-        summary += "\nDetailed Expense Breakdown:\n"
-        summary += "-"*20 + "\n"
-        for expense in sorted(self.current_data['expenses'], 
-                            key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d %H:%M:%S"),
-                            reverse=True):
-            summary += f"\nDate: {expense['date']}\n"
-            summary += f"Category: {expense['category']}\n"
-            summary += f"Description: {expense['description']}\n"
-            summary += f"Amount: ₨ {expense['amount']:.2f}\n"
-            summary += f"Paid by: {expense['paid_by']}\n"
-            summary += f"Shared between: {', '.join(expense['shared_between'])}\n"
+        for category, amount in category_totals.items():
+            if amount > 0:
+                percentage = (amount / total_expenses) * 100
+                summary += f"{category}: ₨ {amount:,.2f} ({percentage:.1f}%)\n"
         
         self.summary_text.delete(1.0, tk.END)
         self.summary_text.insert(tk.END, summary)
@@ -1367,7 +1384,7 @@ class MonthlyKharcha:
                     
                     total = archive_data['month_summary']['total_expenses']
                     ttk.Label(header_frame,
-                             text=f"Total: ₨ {total:,.2f}",
+                             text=f"Total: �� {total:,.2f}",
                              style="Amount.TLabel").pack(side='right', padx=10)
                     
                     # Action buttons
