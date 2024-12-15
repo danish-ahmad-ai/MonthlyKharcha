@@ -922,6 +922,15 @@ class MonthlyKharcha:
         main_frame.pack(fill='both', expand=True)
         
         # Create form fields
+        ttk.Label(main_frame, text="Date:").pack(anchor='w')
+        date_entry = DateEntry(main_frame, width=30,
+                              background=self.colors['primary'],
+                              foreground='white')
+        # Set the current date from the expense
+        current_date = datetime.strptime(target_expense['date'], "%Y-%m-%d %H:%M:%S")
+        date_entry.set_date(current_date)
+        date_entry.pack(fill='x', pady=5)
+        
         ttk.Label(main_frame, text="Category:").pack(anchor='w')
         category_cb = ttk.Combobox(main_frame, values=self.categories)
         category_cb.set(target_expense['category'])
@@ -968,7 +977,7 @@ class MonthlyKharcha:
                     'amount': amount,
                     'paid_by': paid_by_cb.get(),
                     'shared_between': shared_between,
-                    'date': target_expense['date']  # Keep original date
+                    'date': date_entry.get_date().strftime("%Y-%m-%d %H:%M:%S")  # Use new date
                 }
                 
                 # Save changes
