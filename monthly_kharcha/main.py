@@ -57,7 +57,7 @@ class MonthlyKharcha:
         # Modern color scheme
         self.colors = {
             'primary': '#2962ff',      # Vibrant blue
-            'secondary': '#f5f5f5',    # Light gray
+            'secondary': '#f5f5f5',    # Light gray background
             'accent': '#00c853',       # Success green
             'warning': '#ff6d00',      # Warning orange
             'error': '#d50000',        # Error red
@@ -91,6 +91,7 @@ class MonthlyKharcha:
                             background=self.colors['card'])
         self.style.configure("Card.TLabel",
                             font=("Segoe UI", 12),
+                            foreground=self.colors['text'],
                             background=self.colors['card'])
         self.style.configure("Amount.TLabel",
                             font=("Segoe UI", 22, "bold"),
@@ -126,22 +127,56 @@ class MonthlyKharcha:
         self.setup_settings_tab(settings_tab)
 
     def setup_dashboard_tab(self, parent):
-        # Main container with padding
-        main_frame = ttk.Frame(parent, style="Dashboard.TFrame")
-        main_frame.pack(fill='both', expand=True, padx=30, pady=30)
+        # Create a canvas with scrollbar for the entire dashboard
+        container = ttk.Frame(parent)
+        container.pack(fill='both', expand=True)
+        
+        canvas = tk.Canvas(container, bg=self.colors['secondary'])
+        scrollbar = ttk.Scrollbar(container, orient="vertical", command=canvas.yview)
+        
+        # Create the main frame that will contain all content
+        main_frame = ttk.Frame(canvas, style="Dashboard.TFrame")
+        
+        # Configure scrolling
+        def configure_scroll_region(event):
+            canvas.configure(scrollregion=canvas.bbox("all"))
+        
+        main_frame.bind('<Configure>', configure_scroll_region)
+        
+        # Create window in canvas
+        canvas.create_window((0, 0), window=main_frame, anchor='nw', width=container.winfo_width())
+        canvas.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack scrollbar and canvas
+        scrollbar.pack(side='right', fill='y')
+        canvas.pack(side='left', fill='both', expand=True)
+        
+        # Configure canvas to expand with window
+        def on_container_resize(event):
+            canvas.itemconfig(1, width=event.width)  # 1 is the ID of the first (and only) window
+        container.bind('<Configure>', on_container_resize)
+        
+        # Enable mousewheel scrolling
+        def on_mousewheel(event):
+            canvas.yview_scroll(int(-1*(event.delta/120)), "units")
+        canvas.bind_all("<MouseWheel>", on_mousewheel)
+        
+        # Add padding to content
+        content_frame = ttk.Frame(main_frame, style="Dashboard.TFrame", padding=20)
+        content_frame.pack(fill='both', expand=True, padx=20)
         
         # Header with current month
-        header_frame = ttk.Frame(main_frame, style="Dashboard.TFrame")
+        header_frame = ttk.Frame(content_frame)
         header_frame.pack(fill='x', pady=(0, 30))
         current_month = datetime.now().strftime("%B %Y")
         ttk.Label(header_frame, 
                  text=f"Monthly Overview - {current_month}", 
-                 style="Header.TLabel").pack(side='left')
+                 style="Header.TLabel").pack(anchor='center')
         
         # Stats cards with better spacing
-        stats_frame = ttk.Frame(main_frame, style="Dashboard.TFrame")
+        stats_frame = ttk.Frame(content_frame, style="Dashboard.TFrame")
         stats_frame.pack(fill='x', pady=10)
-        stats_frame.grid_columnconfigure((0,1), weight=1)
+        stats_frame.grid_columnconfigure((0,1), weight=1, uniform='col')
         
         # Create modern cards
         total_card = self._create_stat_card(
@@ -157,10 +192,10 @@ class MonthlyKharcha:
             "₨ 0",
             "Highest amount to be settled", 
             1)
-        self.largest_settlement_label = largest_settlement_card.winfo_children()[0].winfo_children()[1]  # Get the amount label
+        self.largest_settlement_label = largest_settlement_card.winfo_children()[0].winfo_children()[1]
         
-        # Quick Actions Section with modern design
-        actions_frame = ttk.LabelFrame(main_frame, 
+        # Quick Actions Section
+        actions_frame = ttk.LabelFrame(content_frame, 
                                      text="Quick Actions",
                                      style="Card.TLabelframe",
                                      padding=25)
@@ -204,36 +239,88 @@ class MonthlyKharcha:
                              fg_color=self.colors[color],
                              **button_style).pack(pady=5, fill='x')
         
-        # Add AI Insights section
-        insights_frame = ttk.LabelFrame(main_frame, 
-                                      text="AI Insights",
+        # AI Insights section
+        insights_frame = ttk.LabelFrame(content_frame, 
+                                      text="AI Insights & Analytics",
                                       style="Card.TLabelframe",
                                       padding=25)
         insights_frame.pack(fill='x', pady=30)
         
+        # Create a container for insights content with background
+        insights_content = ttk.Frame(insights_frame, style="Card.TFrame")
+        insights_content.pack(fill='x', expand=True, pady=(0, 10))
+        
+        # Store insights content frame reference
+        self.insights_content = insights_content
+        
         def update_insights():
-            # Clear previous insights
-            for widget in insights_frame.winfo_children():
-                if widget != refresh_btn:
+            try:
+                # Clear previous insights
+                for widget in insights_content.winfo_children():
                     widget.destroy()
-            
-            # Get and display new insights
-            insights = self.get_expense_insights()
-            for insight in insights:
-                insight_label = ttk.Label(insights_frame,
-                                        text="🔍 " + insight,
-                                        style="Card.TLabel",
-                                        wraplength=800)
-                insight_label.pack(anchor='w', pady=5)
+                
+                # Get insights
+                insights = self.get_expense_insights()
+                
+                if insights:
+                    for insight in insights:
+                        # Create container for each insight
+                        insight_frame = ttk.Frame(insights_content, style="Card.TFrame")
+                        insight_frame.pack(fill='x', pady=5, padx=5)
+                        
+                        # Choose icon based on content
+                        icon = "💰"
+                        if "average" in insight.lower():
+                            icon = "📊"
+                        elif "contributor" in insight.lower() or "payer" in insight.lower():
+                            icon = "👤"
+                        elif "settlement" in insight.lower():
+                            icon = "🔄"
+                        elif "recent" in insight.lower():
+                            icon = "🕒"
+                        elif "recommended" in insight.lower():
+                            icon = "💡"
+                        elif "category" in insight.lower():
+                            icon = "📑"
+                        
+                        # Add insight with icon
+                        label = ttk.Label(
+                            insight_frame,
+                            text=f"{icon} {insight}",
+                            style="Card.TLabel",
+                            wraplength=800
+                        )
+                        label.pack(fill='x', pady=5, padx=10)
+                        
+                        # Add separator except for last insight
+                        if insight != insights[-1]:
+                            ttk.Separator(insights_content, orient='horizontal').pack(fill='x', pady=2)
+                else:
+                    ttk.Label(
+                        insights_content,
+                        text="🔍 No insights available - Add some expenses to get started!",
+                        style="Card.TLabel"
+                    ).pack(pady=10)
+                
+                # Force update
+                self.window.update_idletasks()
+                
+            except Exception as e:
+                print(f"Error in update_insights: {str(e)}")
+                import traceback
+                traceback.print_exc()
         
-        # Add refresh button for insights
-        refresh_btn = ctk.CTkButton(insights_frame,
-                                  text="Refresh Insights",
-                                  command=update_insights,
-                                  **button_style)
-        refresh_btn.pack(anchor='e', pady=10)
+        # Add refresh button at the top
+        refresh_btn = ctk.CTkButton(
+            insights_frame,
+            text="↻ Refresh Insights",
+            command=update_insights,
+            **button_style
+        )
+        refresh_btn.pack(anchor='e', pady=(0, 10), padx=10)
         
-        # Initial insights update
+        # Store update function and run initial update
+        self.update_insights = update_insights
         update_insights()
 
     def _create_stat_card(self, parent, title, value, subtitle, column):
@@ -516,6 +603,10 @@ class MonthlyKharcha:
             # Update graphs if they exist
             if hasattr(self, 'update_graphs'):
                 self.update_graphs()
+            
+            # Update insights
+            if hasattr(self, 'update_insights'):
+                self.update_insights()
 
     def load_current_month(self):
         current_date = datetime.now()
@@ -526,6 +617,7 @@ class MonthlyKharcha:
                 with open(self.current_file, 'r') as f:
                     self.current_data = json.load(f)
                 self.roommates = self.current_data.get('roommates', self.roommates)
+                self.analyze_spending_patterns()  # Analyze existing data
             except json.JSONDecodeError:
                 self.initialize_new_data()
         else:
@@ -1061,6 +1153,11 @@ class MonthlyKharcha:
             self.update_balances()
             self.save_data()
             self.update_expense_list()
+            
+            # Update insights after adding expense
+            if hasattr(self, 'update_insights'):
+                self.update_insights()
+            
             messagebox.showinfo("Success", f"Expense added successfully!\nAmount: ₨ {amount:,.2f}")
             
             if self.summary_text.get(1.0, tk.END).strip():
@@ -1181,28 +1278,34 @@ class MonthlyKharcha:
     def analyze_spending_patterns(self):
         """Analyze spending patterns and detect trends"""
         try:
-            if not self.current_data['expenses']:
+            if not hasattr(self, 'current_data') or not self.current_data.get('expenses'):
+                self.spending_patterns = defaultdict(dict)
                 return
             
-            # Convert expenses to DataFrame for analysis
             expenses_df = pd.DataFrame(self.current_data['expenses'])
-            expenses_df['date'] = pd.to_datetime(expenses_df['date'])
-            
-            # Analyze patterns per category
-            for category in self.categories:
-                category_expenses = expenses_df[expenses_df['category'] == category]
-                if not category_expenses.empty:
-                    avg_amount = category_expenses['amount'].mean()
-                    frequency = len(category_expenses) / 30  # Expenses per day
-                    self.spending_patterns[category] = {
-                        'average_amount': avg_amount,
-                        'frequency': frequency,
-                        'total': category_expenses['amount'].sum()
-                    }
-                    
+            if not expenses_df.empty:
+                expenses_df['date'] = pd.to_datetime(expenses_df['date'])
+                
+                # Analyze patterns per category
+                for category in self.categories:
+                    category_expenses = expenses_df[expenses_df['category'] == category]
+                    if not category_expenses.empty:
+                        avg_amount = category_expenses['amount'].mean()
+                        max_amount = category_expenses['amount'].max()
+                        total = category_expenses['amount'].sum()
+                        frequency = len(category_expenses)
+                        
+                        self.spending_patterns[category] = {
+                            'average_amount': avg_amount,
+                            'max_amount': max_amount,
+                            'total': total,
+                            'frequency': frequency,
+                            'last_date': category_expenses['date'].max()
+                        }
+        
         except Exception as e:
             print(f"Error analyzing spending patterns: {str(e)}")
-            self.spending_patterns = defaultdict(dict)  # Reset to empty if error occurs
+            self.spending_patterns = defaultdict(dict)
 
     def predict_monthly_expenses(self):
         """Predict total expenses for next month based on historical data"""
@@ -1240,47 +1343,92 @@ class MonthlyKharcha:
         insights = []
         
         try:
-            # Analyze category-wise spending
+            # Debug print
+            print("Checking expenses:", len(self.current_data.get('expenses', [])))
+            
+            if not self.current_data.get('expenses'):
+                return ["No expenses recorded yet this month"]
+            
+            # Basic stats
+            total_expenses = sum(expense['amount'] for expense in self.current_data['expenses'])
+            insights.append(f"Total spending this month: ₨ {total_expenses:,.2f}")
+            
+            # Category analysis
             category_totals = defaultdict(float)
             for expense in self.current_data['expenses']:
                 category_totals[expense['category']] += expense['amount']
             
-            # Find highest spending category
-            if category_totals:
-                highest_category = max(category_totals.items(), key=lambda x: x[1])
-                insights.append(f"Highest spending is in {highest_category[0]} "
-                              f"(₨ {highest_category[1]:,.2f})")
+            # Sort categories by amount
+            sorted_categories = sorted(category_totals.items(), key=lambda x: x[1], reverse=True)
             
-            # Detect unusual expenses
-            if hasattr(self, 'spending_patterns'):
-                for category, pattern in self.spending_patterns.items():
-                    if not pattern:  # Skip if pattern is empty
-                        continue
-                        
-                    recent_expenses = [e for e in self.current_data['expenses'] 
-                                     if e['category'] == category and 
-                                     datetime.strptime(e['date'], "%Y-%m-%d %H:%M:%S") > 
-                                     datetime.now() - timedelta(days=7)]
-                    
-                    if recent_expenses and 'average_amount' in pattern:
-                        recent_avg = sum(e['amount'] for e in recent_expenses) / len(recent_expenses)
-                        if recent_avg > pattern['average_amount'] * 1.5:
-                            insights.append(f"Recent {category} expenses are "
-                                         f"{(recent_avg/pattern['average_amount']-1)*100:.0f}% "
-                                         f"higher than usual")
+            # Top spending categories
+            if sorted_categories:
+                insights.append(f"Top spending category: {sorted_categories[0][0]} "
+                              f"(₨ {sorted_categories[0][1]:,.2f})")
             
-            # Predict next month's expenses
-            predicted_total = self.predict_monthly_expenses()
-            if predicted_total and predicted_total > 0:
-                insights.append(f"Predicted expenses for next month: ₨ {predicted_total:,.2f}")
+                # Category distribution
+                for category, amount in sorted_categories[:3]:  # Top 3 categories
+                    percentage = (amount / total_expenses) * 100
+                    insights.append(f"{category}: ₨ {amount:,.2f} ({percentage:.1f}% of total)")
             
-            if not insights:
-                insights.append("Not enough data to generate insights yet")
+            # Recent activity
+            recent_expenses = sorted(self.current_data['expenses'], 
+                                   key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d %H:%M:%S"),
+                                   reverse=True)
+            if recent_expenses:
+                latest = recent_expenses[0]
+                insights.append(f"Most recent expense: {latest['description']} "
+                              f"(₨ {latest['amount']:,.2f})")
+            
+            # Individual analysis
+            person_totals = defaultdict(float)
+            person_counts = defaultdict(int)
+            for expense in self.current_data['expenses']:
+                person_totals[expense['paid_by']] += expense['amount']
+                person_counts[expense['paid_by']] += 1
+            
+            if person_totals:
+                # Highest contributor
+                highest_payer = max(person_totals.items(), key=lambda x: x[1])
+                insights.append(f"Highest contributor: {highest_payer[0]} "
+                              f"(₨ {highest_payer[1]:,.2f})")
+            
+                # Most frequent payer
+                most_frequent = max(person_counts.items(), key=lambda x: x[1])
+                insights.append(f"Most frequent payer: {most_frequent[0]} "
+                              f"({most_frequent[1]} expenses)")
+            
+            # Settlement status
+            balances = self.current_data.get('balances', {})
+            pending_settlements = [abs(bal) for bal in balances.values() if abs(bal) > 0]
+            if pending_settlements:
+                total_pending = sum(pending_settlements) / 2  # Divide by 2 as each debt is counted twice
+                insights.append(f"Total pending settlements: ₨ {total_pending:,.2f}")
                 
+                # Settlement recommendations
+                settlement_plan = self.suggest_settlement_plan()
+                if settlement_plan:
+                    top_settlement = settlement_plan[0]
+                    insights.append(f"Recommended settlement: {top_settlement['from']} should pay "
+                                  f"₨ {top_settlement['amount']:,.2f} to {top_settlement['to']}")
+            
+            # Time-based analysis
+            if len(recent_expenses) > 1:
+                dates = [datetime.strptime(exp['date'], "%Y-%m-%d %H:%M:%S").date() 
+                        for exp in self.current_data['expenses']]
+                unique_days = len(set(dates))
+                if unique_days > 0:
+                    daily_avg = total_expenses / unique_days
+                    insights.append(f"Daily average spending: ₨ {daily_avg:,.2f}")
+            
+            # Debug print
+            print("Generated insights:", len(insights))
             return insights
             
         except Exception as e:
             print(f"Error generating insights: {str(e)}")
+            import traceback
+            traceback.print_exc()
             return ["Unable to generate insights at this time"]
 
     def suggest_settlement_plan(self):
