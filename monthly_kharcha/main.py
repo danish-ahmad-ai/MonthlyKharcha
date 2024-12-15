@@ -37,31 +37,57 @@ class MonthlyKharcha:
         self.update_balances()
 
     def _setup_styles(self):
+        # Modern color scheme
         self.colors = {
-            'primary': '#1a73e8',
-            'secondary': '#f8f9fa',
-            'text': '#202124',
-            'success': '#34a853',
-            'warning': '#fbbc04',
-            'error': '#ea4335',
-            'background': '#ffffff'
+            'primary': '#2962ff',      # Vibrant blue
+            'secondary': '#f5f5f5',    # Light gray
+            'accent': '#00c853',       # Success green
+            'warning': '#ff6d00',      # Warning orange
+            'error': '#d50000',        # Error red
+            'text': '#212121',         # Dark text
+            'text_secondary': '#757575', # Secondary text
+            'background': '#ffffff',    # White background
+            'card': '#ffffff',         # Card background
+            'border': '#e0e0e0'        # Border color
         }
         
+        # Configure styles for ttk widgets
         self.style = ttk.Style()
-        self.style.configure("Card.TFrame", background=self.colors['background'], padding=15)
-        self.style.configure("Dashboard.TFrame", background=self.colors['secondary'], padding=20)
-        self.style.configure("Header.TLabel", 
-                           font=("Segoe UI", 24, "bold"),
-                           foreground=self.colors['primary'])
-        self.style.configure("SubHeader.TLabel", 
-                           font=("Segoe UI", 16),
-                           foreground=self.colors['text'])
-        self.style.configure("Card.TLabel", 
-                           font=("Segoe UI", 12),
-                           background=self.colors['background'])
-        self.style.configure("Amount.TLabel", 
-                           font=("Segoe UI", 20, "bold"),
-                           foreground=self.colors['primary'])
+        
+        # Main window background
+        self.window.configure(bg=self.colors['secondary'])
+        
+        # Frame styles
+        self.style.configure("Dashboard.TFrame", 
+                            background=self.colors['secondary'])
+        self.style.configure("Card.TFrame",
+                            background=self.colors['card'])
+        
+        # Label styles
+        self.style.configure("Header.TLabel",
+                            font=("Segoe UI", 24, "bold"),
+                            foreground=self.colors['primary'],
+                            background=self.colors['secondary'])
+        self.style.configure("SubHeader.TLabel",
+                            font=("Segoe UI", 16),
+                            foreground=self.colors['text'],
+                            background=self.colors['card'])
+        self.style.configure("Card.TLabel",
+                            font=("Segoe UI", 12),
+                            background=self.colors['card'])
+        self.style.configure("Amount.TLabel",
+                            font=("Segoe UI", 22, "bold"),
+                            foreground=self.colors['primary'],
+                            background=self.colors['card'])
+        
+        # LabelFrame styles
+        self.style.configure("Card.TLabelframe",
+                            background=self.colors['card'],
+                            borderwidth=0)
+        self.style.configure("Card.TLabelframe.Label",
+                            font=("Segoe UI", 12, "bold"),
+                            background=self.colors['card'],
+                            foreground=self.colors['text'])
 
     def setup_gui(self):
         self.notebook = ttk.Notebook(self.window)
@@ -83,90 +109,113 @@ class MonthlyKharcha:
         self.setup_settings_tab(settings_tab)
 
     def setup_dashboard_tab(self, parent):
+        # Main container with padding
         main_frame = ttk.Frame(parent, style="Dashboard.TFrame")
-        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
+        main_frame.pack(fill='both', expand=True, padx=30, pady=30)
         
-        header_frame = ttk.Frame(main_frame)
-        header_frame.pack(fill='x', pady=(0, 20))
+        # Header with current month
+        header_frame = ttk.Frame(main_frame, style="Dashboard.TFrame")
+        header_frame.pack(fill='x', pady=(0, 30))
         current_month = datetime.now().strftime("%B %Y")
         ttk.Label(header_frame, 
-                 text=f"Dashboard - {current_month}", 
+                 text=f"Monthly Overview - {current_month}", 
                  style="Header.TLabel").pack(side='left')
         
-        stats_frame = ttk.Frame(main_frame)
+        # Stats cards with better spacing
+        stats_frame = ttk.Frame(main_frame, style="Dashboard.TFrame")
         stats_frame.pack(fill='x', pady=10)
         stats_frame.grid_columnconfigure((0,1), weight=1)
         
+        # Create modern cards
         total_card = self._create_stat_card(
-            stats_frame, "Total Expenses", "₨ 0",
-            "This month's total expenses", 0)
+            stats_frame, 
+            "Total Expenses", 
+            "₨ 0",
+            "This month's total expenses", 
+            0)
         
         outstanding_card = self._create_stat_card(
-            stats_frame, "Outstanding Balances", "₨ 0",
-            "Total unsettled amounts", 1)
+            stats_frame, 
+            "Outstanding Balances", 
+            "₨ 0",
+            "Total unsettled amounts", 
+            1)
         
-        actions_frame = ttk.LabelFrame(main_frame, text="Quick Actions", padding=15)
-        actions_frame.pack(fill='x', pady=20)
+        # Quick Actions Section with modern design
+        actions_frame = ttk.LabelFrame(main_frame, 
+                                     text="Quick Actions",
+                                     style="Card.TLabelframe",
+                                     padding=25)
+        actions_frame.pack(fill='x', pady=30)
         
-        expense_frame = ttk.Frame(actions_frame)
-        expense_frame.pack(side='left', padx=20)
-        ttk.Label(expense_frame, text="Expense Management", 
-                 style="SubHeader.TLabel").pack(pady=(0,10))
+        # Configure button styles
+        button_style = {
+            "corner_radius": 8,
+            "border_width": 0,
+            "text_color": "white",
+            "hover": True,
+            "height": 35
+        }
         
-        ctk.CTkButton(expense_frame, 
-                      text="Add New Expense",
-                      command=lambda: self.notebook.select(1)).pack(pady=5)
-        
-        ctk.CTkButton(expense_frame,
-                      text="View Monthly Summary",
-                      command=lambda: self.notebook.select(2)).pack(pady=5)
-        
-        settlement_frame = ttk.Frame(actions_frame)
-        settlement_frame.pack(side='left', padx=20)
-        ttk.Label(settlement_frame, text="Settlements", 
-                 style="SubHeader.TLabel").pack(pady=(0,10))
-        
-        ctk.CTkButton(settlement_frame,
-                      text="Record Settlement",
-                      command=self.record_settlement).pack(pady=5)
-        
-        ctk.CTkButton(settlement_frame,
-                      text="Clear All Balances",
-                      command=self.clear_all_balances).pack(pady=5)
-        
-        archive_frame = ttk.Frame(actions_frame)
-        archive_frame.pack(side='left', padx=20)
-        ttk.Label(archive_frame, text="Archives", 
-                 style="SubHeader.TLabel").pack(pady=(0,10))
-        
-        ctk.CTkButton(archive_frame,
-                      text="View Previous Months",
-                      command=self.show_archives).pack(pady=5)
-        
-        ctk.CTkButton(archive_frame,
-                      text="Start New Month",
-                      command=self.start_new_month).pack(pady=5)
+        # Action buttons in groups
+        for i, (title, buttons) in enumerate([
+            ("Expense Management", [
+                ("Add New Expense", lambda: self.notebook.select(1), "primary"),
+                ("View Monthly Summary", lambda: self.notebook.select(2), "primary")
+            ]),
+            ("Settlements", [
+                ("Record Settlement", self.record_settlement, "accent"),
+                ("Clear All Balances", self.clear_all_balances, "warning")
+            ]),
+            ("Archives", [
+                ("View Previous Months", self.show_archives, "primary"),
+                ("Start New Month", self.start_new_month, "warning")
+            ])
+        ]):
+            frame = ttk.Frame(actions_frame, style="Card.TFrame")
+            frame.pack(side='left', padx=20, expand=True)
+            
+            ttk.Label(frame, 
+                     text=title,
+                     style="SubHeader.TLabel").pack(pady=(0,15))
+            
+            for text, command, color in buttons:
+                ctk.CTkButton(frame,
+                             text=text,
+                             command=command,
+                             fg_color=self.colors[color],
+                             **button_style).pack(pady=5, fill='x')
 
     def _create_stat_card(self, parent, title, value, subtitle, column):
+        """Creates a modern statistics card with shadow effect"""
+        # Create main card frame
         card = ttk.Frame(parent, style="Card.TFrame")
-        card.grid(row=0, column=column, padx=10, sticky='nsew')
+        card.grid(row=0, column=column, padx=15, pady=15, sticky='nsew')
         
-        ttk.Label(card, 
+        # Add padding inside card
+        inner_frame = ttk.Frame(card, style="Card.TFrame")
+        inner_frame.pack(padx=20, pady=20, fill='both', expand=True)
+        
+        # Title with smaller font
+        ttk.Label(inner_frame, 
                  text=title,
                  style="SubHeader.TLabel").pack(anchor='w')
         
+        # Value (amount)
         if title == "Total Expenses":
-            self.total_expenses_label = ttk.Label(card, 
+            self.total_expenses_label = ttk.Label(inner_frame, 
                                                 text=value,
                                                 style="Amount.TLabel")
-            self.total_expenses_label.pack(pady=10)
+            self.total_expenses_label.pack(pady=(10, 5))
         else:
-            ttk.Label(card, 
+            ttk.Label(inner_frame, 
                      text=value,
-                     style="Amount.TLabel").pack(pady=10)
+                     style="Amount.TLabel").pack(pady=(10, 5))
         
-        ttk.Label(card, 
+        # Subtitle with secondary color
+        ttk.Label(inner_frame, 
                  text=subtitle,
+                 foreground=self.colors['text_secondary'],
                  style="Card.TLabel").pack(anchor='w')
         
         return card
