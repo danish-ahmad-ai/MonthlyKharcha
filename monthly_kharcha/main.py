@@ -1343,9 +1343,6 @@ class MonthlyKharcha:
         insights = []
         
         try:
-            # Debug print
-            print("Checking expenses:", len(self.current_data.get('expenses', [])))
-            
             if not self.current_data.get('expenses'):
                 return ["No expenses recorded yet this month"]
             
@@ -1421,12 +1418,9 @@ class MonthlyKharcha:
                     daily_avg = total_expenses / unique_days
                     insights.append(f"Daily average spending: ₨ {daily_avg:,.2f}")
             
-            # Debug print
-            print("Generated insights:", len(insights))
             return insights
             
         except Exception as e:
-            print(f"Error generating insights: {str(e)}")
             import traceback
             traceback.print_exc()
             return ["Unable to generate insights at this time"]
