@@ -817,6 +817,33 @@ class MonthlyKharcha:
         ttk.Button(btn_frame, text="Export to PDF",
                   command=self.export_to_pdf).pack(side='left', padx=5)
         
+        # Add Expense List for editing
+        expenses_frame = ttk.LabelFrame(parent, text="Recent Expenses", padding=10)
+        expenses_frame.pack(fill='x', pady=10)
+        
+        # Create treeview for expenses
+        columns = ('Date', 'Category', 'Description', 'Amount', 'Paid By', 'Shared Between')
+        self.expense_tree = ttk.Treeview(expenses_frame, columns=columns, show='headings')
+        
+        # Configure columns
+        for col in columns:
+            self.expense_tree.heading(col, text=col)
+            self.expense_tree.column(col, width=100)
+        
+        # Add scrollbar
+        scrollbar = ttk.Scrollbar(expenses_frame, orient="vertical", command=self.expense_tree.yview)
+        self.expense_tree.configure(yscrollcommand=scrollbar.set)
+        
+        # Pack tree and scrollbar
+        self.expense_tree.pack(side='left', fill='x', expand=True)
+        scrollbar.pack(side='right', fill='y')
+        
+        # Edit button
+        edit_btn = ttk.Button(expenses_frame, text="Edit Selected",
+                             command=self.edit_expense)
+        edit_btn.pack(pady=5)
+        
+        # Summary text area
         summary_frame = ttk.LabelFrame(parent, text="Monthly Summary", padding="10")
         summary_frame.pack(fill='both', expand=True)
         
@@ -830,7 +857,140 @@ class MonthlyKharcha:
                                   yscrollcommand=scrollbar.set)
         self.summary_text.pack(side='left', fill='both', expand=True)
         scrollbar.config(command=self.summary_text.yview)
-    
+        
+        # Update expense list
+        self.update_expense_list()
+
+    def update_expense_list(self):
+        """Update the expense list in the summary tab"""
+        # Clear existing items
+        for item in self.expense_tree.get_children():
+            self.expense_tree.delete(item)
+        
+        # Add expenses sorted by date
+        sorted_expenses = sorted(
+            self.current_data['expenses'],
+            key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d %H:%M:%S"),
+            reverse=True
+        )
+        
+        for expense in sorted_expenses:
+            self.expense_tree.insert('', 'end', values=(
+                expense['date'],
+                expense['category'],
+                expense['description'],
+                f"₨ {expense['amount']:,.2f}",
+                expense['paid_by'],
+                ', '.join(expense['shared_between'])
+            ))
+
+    def edit_expense(self):
+        """Edit selected expense"""
+        selected = self.expense_tree.selection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select an expense to edit")
+            return
+        
+        # Get selected expense
+        item = selected[0]
+        values = self.expense_tree.item(item)['values']
+        
+        # Find the expense in the data
+        expense_date = values[0]
+        expense_desc = values[2]
+        target_expense = None
+        
+        for i, expense in enumerate(self.current_data['expenses']):
+            if (expense['date'] == expense_date and 
+                expense['description'] == expense_desc):
+                target_expense = expense
+                expense_index = i
+                break
+        
+        if not target_expense:
+            messagebox.showerror("Error", "Could not find expense")
+            return
+        
+        # Create edit window
+        edit_window = tk.Toplevel(self.window)
+        edit_window.title("Edit Expense")
+        edit_window.geometry("500x600")
+        edit_window.transient(self.window)
+        edit_window.grab_set()
+        
+        main_frame = ttk.Frame(edit_window, padding=20)
+        main_frame.pack(fill='both', expand=True)
+        
+        # Create form fields
+        ttk.Label(main_frame, text="Category:").pack(anchor='w')
+        category_cb = ttk.Combobox(main_frame, values=self.categories)
+        category_cb.set(target_expense['category'])
+        category_cb.pack(fill='x', pady=5)
+        
+        ttk.Label(main_frame, text="Description:").pack(anchor='w')
+        desc_entry = ttk.Entry(main_frame)
+        desc_entry.insert(0, target_expense['description'])
+        desc_entry.pack(fill='x', pady=5)
+        
+        ttk.Label(main_frame, text="Amount:").pack(anchor='w')
+        amount_entry = ttk.Entry(main_frame)
+        amount_entry.insert(0, str(target_expense['amount']))
+        amount_entry.pack(fill='x', pady=5)
+        
+        ttk.Label(main_frame, text="Paid By:").pack(anchor='w')
+        paid_by_cb = ttk.Combobox(main_frame, values=self.roommates)
+        paid_by_cb.set(target_expense['paid_by'])
+        paid_by_cb.pack(fill='x', pady=5)
+        
+        ttk.Label(main_frame, text="Shared Between:").pack(anchor='w')
+        shared_frame = ttk.Frame(main_frame)
+        shared_frame.pack(fill='x', pady=5)
+        
+        shared_vars = {}
+        for name in self.roommates:
+            shared_vars[name] = tk.BooleanVar(value=name in target_expense['shared_between'])
+            ttk.Checkbutton(shared_frame, text=name, variable=shared_vars[name]).pack(side='left', padx=5)
+        
+        def save_changes():
+            try:
+                # Validate amount
+                amount = float(amount_entry.get())
+                
+                # Get shared between list
+                shared_between = [name for name, var in shared_vars.items() if var.get()]
+                if not shared_between:
+                    raise ValueError("At least one person must share the expense")
+                
+                # Update expense
+                self.current_data['expenses'][expense_index] = {
+                    'category': category_cb.get(),
+                    'description': desc_entry.get(),
+                    'amount': amount,
+                    'paid_by': paid_by_cb.get(),
+                    'shared_between': shared_between,
+                    'date': target_expense['date']  # Keep original date
+                }
+                
+                # Save changes
+                self.save_data()
+                self.update_balances()
+                self.update_expense_list()
+                if self.summary_text.get(1.0, tk.END).strip():
+                    self.calculate_summary()
+                
+                edit_window.destroy()
+                messagebox.showinfo("Success", "Expense updated successfully!")
+                
+            except ValueError as e:
+                messagebox.showerror("Error", str(e))
+        
+        # Buttons
+        btn_frame = ttk.Frame(main_frame)
+        btn_frame.pack(pady=20)
+        
+        ttk.Button(btn_frame, text="Save Changes", command=save_changes).pack(side='left', padx=5)
+        ttk.Button(btn_frame, text="Cancel", command=edit_window.destroy).pack(side='left', padx=5)
+
     def setup_settings_tab(self, parent):
         settings_frame = ttk.LabelFrame(parent, text="Settings", padding=10)
         settings_frame.pack(fill='x', padx=10, pady=5)
@@ -877,6 +1037,7 @@ class MonthlyKharcha:
             self.current_data['expenses'].append(expense)
             self.update_balances()
             self.save_data()
+            self.update_expense_list()
             messagebox.showinfo("Success", f"Expense added successfully!\nAmount: ₨ {amount:,.2f}")
             
             if self.summary_text.get(1.0, tk.END).strip():
