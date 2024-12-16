@@ -944,10 +944,21 @@ class MonthlyKharcha:
         self.expense_tree.pack(side='left', fill='x', expand=True)
         scrollbar.pack(side='right', fill='y')
         
+        # Create a frame for buttons
+        button_frame = ttk.Frame(expenses_frame)
+        button_frame.pack(pady=5)
+        
         # Edit button
-        edit_btn = ttk.Button(expenses_frame, text="Edit Selected",
+        edit_btn = ttk.Button(button_frame, 
+                             text="Edit Selected",
                              command=self.edit_expense)
-        edit_btn.pack(pady=5)
+        edit_btn.pack(side='left', padx=5)
+        
+        # Add delete button
+        delete_btn = ttk.Button(button_frame, 
+                               text="Delete Selected",
+                               command=self.delete_expense)
+        delete_btn.pack(side='left', padx=5)
         
         # Summary text area
         summary_frame = ttk.LabelFrame(parent, text="Monthly Summary", padding="10")
@@ -1105,6 +1116,53 @@ class MonthlyKharcha:
         
         ttk.Button(btn_frame, text="Save Changes", command=save_changes).pack(side='left', padx=5)
         ttk.Button(btn_frame, text="Cancel", command=edit_window.destroy).pack(side='left', padx=5)
+
+    def delete_expense(self):
+        """Delete selected expense"""
+        selected = self.expense_tree.selection()
+        if not selected:
+            messagebox.showwarning("No Selection", "Please select an expense to delete")
+            return
+        
+        # Get selected expense
+        item = selected[0]
+        values = self.expense_tree.item(item)['values']
+        
+        # Confirm deletion
+        if not messagebox.askyesno("Confirm Delete", 
+                                  f"Are you sure you want to delete this expense?\n\n"
+                                  f"Description: {values[2]}\n"
+                                  f"Amount: {values[3]}\n"
+                                  f"Date: {values[0]}"):
+            return
+        
+        # Find the expense in the data
+        expense_date = values[0]
+        expense_desc = values[2]
+        
+        for i, expense in enumerate(self.current_data['expenses']):
+            if (expense['date'] == expense_date and 
+                expense['description'] == expense_desc):
+                # Remove the expense
+                self.current_data['expenses'].pop(i)
+                
+                # Save changes
+                self.save_data()
+                
+                # Update everything
+                self.update_balances()
+                self.update_expense_list()
+                if self.summary_text.get(1.0, tk.END).strip():
+                    self.calculate_summary()
+                
+                # Update graphs if they exist
+                if hasattr(self, 'update_graphs'):
+                    self.update_graphs()
+                
+                messagebox.showinfo("Success", "Expense deleted successfully!")
+                return
+        
+        messagebox.showerror("Error", "Could not find expense to delete")
 
     def setup_settings_tab(self, parent):
         settings_frame = ttk.LabelFrame(parent, text="Settings", padding=10)
