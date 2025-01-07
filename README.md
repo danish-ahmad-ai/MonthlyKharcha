@@ -3,7 +3,6 @@
 A modern expense tracking and roommate settlement manager with AI-powered insights.
 
 ## Features
-- 🎯 Modern UI with dark/light mode
 - 📊 Real-time expense tracking
 - 🤖 AI-powered insights
 - 💰 Smart settlement suggestions
@@ -11,6 +10,7 @@ A modern expense tracking and roommate settlement manager with AI-powered insigh
 - 📈 Interactive graphs
 - 🔄 Monthly archiving
 - 📑 PDF export
+- 🎯 Modern UI with dark/light mode
 
 ## Installation
 
