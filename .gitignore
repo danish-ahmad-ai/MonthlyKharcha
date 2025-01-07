@@ -36,13 +36,8 @@ ENV/
 *.pdf
 
 # Logs
-*.log 
+*.log
 
-# Add to existing .gitignore
-*.pyc
-__pycache__/
-.env
-.pytest_cache/
-.coverage
-htmlcov/
-.DS_Store 
+# OS
+.DS_Store
+Thumbs.db 
