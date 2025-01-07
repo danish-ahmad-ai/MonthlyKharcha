@@ -1,5 +1,5 @@
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, simpledialog
 import json
 import os
 from datetime import datetime
@@ -23,7 +23,15 @@ import seaborn as sns
 os.environ['QT_AUTO_SCREEN_SCALE_FACTOR'] = '1'
 
 class MonthlyKharcha:
+    """
+    Main application class for Monthly Kharcha expense manager.
+    
+    Handles expense tracking, roommate settlements, and financial analytics
+    with a modern GUI interface.
+    """
+    
     def __init__(self):
+        """Initialize the application with default settings and UI setup."""
         self.window = ctk.CTk()
         self.window.title("Monthly Kharcha - Expense Manager")
         self.window.geometry("1400x900")
@@ -35,6 +43,8 @@ class MonthlyKharcha:
         self.spending_patterns = defaultdict(dict)  # Initialize spending_patterns
         self.expense_predictor = None
         
+        # Setup themes first
+        self.setup_theme_settings()  # Add this line before _setup_styles
         self._setup_styles()
         
         self.data_dir = Path.home() / "MonthlyKharcha"
@@ -106,6 +116,76 @@ class MonthlyKharcha:
                             font=("Segoe UI", 12, "bold"),
                             background=self.colors['card'],
                             foreground=self.colors['text'])
+
+    def setup_theme_settings(self):
+        # Theme colors
+        self.themes = {
+            'light': {
+                'primary': '#2962ff',      # Vibrant blue
+                'secondary': '#f5f5f5',    # Light gray background
+                'accent': '#00c853',       # Success green
+                'warning': '#ff6d00',      # Warning orange
+                'error': '#d50000',        # Error red
+                'text': '#212121',         # Dark text
+                'text_secondary': '#757575', # Secondary text
+                'background': '#ffffff',    # White background
+                'card': '#ffffff',         # Card background
+                'border': '#e0e0e0'        # Border color
+            },
+            'dark': {
+                'primary': '#82b1ff',      # Light blue
+                'secondary': '#1a1a1a',    # Dark background
+                'accent': '#69f0ae',       # Light green
+                'warning': '#ffab40',      # Light orange
+                'error': '#ff5252',        # Light red
+                'text': '#ffffff',         # White text
+                'text_secondary': '#b0b0b0', # Light gray text
+                'background': '#121212',    # Very dark background
+                'card': '#242424',         # Dark card background
+                'border': '#404040'        # Dark border
+            }
+        }
+        self.current_theme = 'light'
+        
+        # Set initial theme
+        ctk.set_appearance_mode("light")
+        self.colors = self.themes[self.current_theme]
+
+    def toggle_theme(self):
+        """Toggle between light and dark themes"""
+        self.current_theme = 'dark' if self.current_theme == 'light' else 'light'
+        self.colors = self.themes[self.current_theme]
+        
+        # Update CustomTkinter appearance
+        ctk.set_appearance_mode("dark" if self.current_theme == 'dark' else "light")
+        
+        # Update ttk styles
+        self._setup_styles()
+        
+        # Update all frames and widgets
+        self.refresh_ui()
+
+    def refresh_ui(self):
+        """Refresh the UI with new theme colors"""
+        # Recreate the tabs with new theme
+        for tab in self.notebook.tabs():
+            self.notebook.forget(tab)
+        
+        # Recreate tabs
+        dashboard_tab = ttk.Frame(self.notebook, style="Dashboard.TFrame")
+        expenses_tab = ttk.Frame(self.notebook)
+        summary_tab = ttk.Frame(self.notebook)
+        settings_tab = ttk.Frame(self.notebook)
+        
+        self.notebook.add(dashboard_tab, text=' Dashboard ')
+        self.notebook.add(expenses_tab, text=' Add Expenses ')
+        self.notebook.add(summary_tab, text=' Monthly Summary ')
+        self.notebook.add(settings_tab, text=' Settings ')
+        
+        self.setup_dashboard_tab(dashboard_tab)
+        self.setup_expenses_tab(expenses_tab)
+        self.setup_summary_tab(summary_tab)
+        self.setup_settings_tab(settings_tab)
 
     def setup_gui(self):
         self.notebook = ttk.Notebook(self.window)
@@ -1168,13 +1248,26 @@ class MonthlyKharcha:
         settings_frame = ttk.LabelFrame(parent, text="Settings", padding=10)
         settings_frame.pack(fill='x', padx=10, pady=5)
         
-        ttk.Label(settings_frame, text="Manage Roommates:").pack(anchor='w', pady=5)
+        # Theme settings
+        theme_frame = ttk.LabelFrame(settings_frame, text="Appearance", padding=10)
+        theme_frame.pack(fill='x', pady=10)
         
-        self.roommate_listbox = tk.Listbox(settings_frame, height=6)
+        theme_btn = ctk.CTkButton(
+            theme_frame,
+            text="Toggle Dark/Light Mode",
+            command=self.toggle_theme
+        )
+        theme_btn.pack(pady=10)
+        
+        # Roommate settings
+        roommate_frame = ttk.LabelFrame(settings_frame, text="Manage Roommates", padding=10)
+        roommate_frame.pack(fill='x', pady=10)
+        
+        self.roommate_listbox = tk.Listbox(roommate_frame, height=6)
         self.roommate_listbox.pack(fill='x', pady=5)
         self.update_roommate_list()
         
-        btn_frame = ttk.Frame(settings_frame)
+        btn_frame = ttk.Frame(roommate_frame)
         btn_frame.pack(fill='x', pady=5)
         
         ttk.Button(btn_frame, text="Add Roommate", 
@@ -1292,9 +1385,11 @@ class MonthlyKharcha:
             self.update_roommate_list()
     
     def update_roommate_list(self):
-        self.roommate_listbox.delete(0, tk.END)
-        for name in self.roommates:
-            self.roommate_listbox.insert(tk.END, name)
+        """Update the roommate listbox with current roommates"""
+        if hasattr(self, 'roommate_listbox'):
+            self.roommate_listbox.delete(0, tk.END)
+            for roommate in self.roommates:
+                self.roommate_listbox.insert(tk.END, roommate)
     
     def export_to_pdf(self):
         try:
@@ -1562,12 +1657,28 @@ class MonthlyKharcha:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Get list of archive files
-        archive_files = sorted(
-            [f for f in self.data_dir.glob("archive_*.json")],
-            key=lambda x: datetime.strptime(x.stem.split('_')[1] + '_' + x.stem.split('_')[2], "%Y_%m"),
-            reverse=True
-        )
+        # Get list of archive files - include both current month files and archive files
+        archive_files = []
+        
+        # Look for current month files (YYYY_MM.json)
+        current_files = list(self.data_dir.glob("[0-9][0-9][0-9][0-9]_[0-9][0-9].json"))
+        
+        # Look for archive files (archive_YYYY_MM.json)
+        archive_prefix_files = list(self.data_dir.glob("archive_[0-9][0-9][0-9][0-9]_[0-9][0-9].json"))
+        
+        archive_files.extend(current_files)
+        archive_files.extend(archive_prefix_files)
+        
+        # Sort files by date (newest first)
+        def get_date_from_filename(filename):
+            parts = filename.stem.split('_')
+            if parts[0] == 'archive':
+                year, month = int(parts[1]), int(parts[2])
+            else:
+                year, month = int(parts[0]), int(parts[1])
+            return datetime(year, month, 1)
+        
+        archive_files.sort(key=get_date_from_filename, reverse=True)
         
         if not archive_files:
             ttk.Label(scrollable_frame,
@@ -1578,54 +1689,77 @@ class MonthlyKharcha:
             for archive_file in archive_files:
                 try:
                     with open(archive_file, 'r') as f:
-                        archive_data = json.load(f)
-                    
-                    year = archive_file.stem.split('_')[1]
-                    month = archive_file.stem.split('_')[2]
-                    month_name = datetime(int(year), int(month), 1).strftime("%B %Y")
-                    
-                    # Create card frame
-                    card = ttk.Frame(scrollable_frame, style="Card.TFrame")
-                    card.pack(fill='x', pady=10, padx=10)
-                    
-                    # Month and total
-                    header_frame = ttk.Frame(card)
-                    header_frame.pack(fill='x', pady=5)
-                    
-                    ttk.Label(header_frame,
-                             text=month_name,
-                             style="SubHeader.TLabel").pack(side='left', padx=10)
-                    
-                    total = archive_data['month_summary']['total_expenses']
-                    ttk.Label(header_frame,
-                             text=f"Total: ₨ {total:,.2f}",
-                             style="Amount.TLabel").pack(side='right', padx=10)
-                    
-                    # Action buttons
-                    btn_frame = ttk.Frame(card)
-                    btn_frame.pack(fill='x', pady=5)
-                    
-                    def view_summary(file=archive_file):
-                        self.view_archive_summary(file)
-                    
-                    def export_pdf(file=archive_file, date=datetime(int(year), int(month), 1)):
-                        with open(file, 'r') as f:
+                        if archive_file.stem.startswith('archive_'):
+                            archive_data = json.load(f)
+                            year = archive_file.stem.split('_')[1]
+                            month = archive_file.stem.split('_')[2]
+                        else:
                             data = json.load(f)
-                        self.export_monthly_archive(data, date)
-                    
-                    ctk.CTkButton(btn_frame,
-                                text="View Details",
-                                command=view_summary,
-                                width=150).pack(side='left', padx=5)
-                    
-                    ctk.CTkButton(btn_frame,
-                                text="Export PDF",
-                                command=export_pdf,
-                                width=150).pack(side='left', padx=5)
-                    
+                            year, month = archive_file.stem.split('_')
+                            archive_data = {
+                                'month_data': data,
+                                'month_summary': {
+                                    'total_expenses': sum(exp['amount'] for exp in data['expenses']),
+                                    'category_totals': self._calculate_category_totals(data['expenses']),
+                                    'final_balances': data.get('balances', {}),
+                                    'expense_count': len(data['expenses'])
+                                }
+                            }
+                        
+                        month_name = datetime(int(year), int(month), 1).strftime("%B %Y")
+                        
+                        # Create card frame
+                        card = ttk.Frame(scrollable_frame, style="Card.TFrame")
+                        card.pack(fill='x', pady=10, padx=10)
+                        
+                        # Month and total
+                        header_frame = ttk.Frame(card)
+                        header_frame.pack(fill='x', pady=5)
+                        
+                        ttk.Label(header_frame,
+                                 text=month_name,
+                                 style="SubHeader.TLabel").pack(side='left', padx=10)
+                        
+                        total = archive_data['month_summary']['total_expenses']
+                        ttk.Label(header_frame,
+                                 text=f"Total: ₨ {total:,.2f}",
+                                 style="Amount.TLabel").pack(side='right', padx=10)
+                        
+                        # Action buttons
+                        btn_frame = ttk.Frame(card)
+                        btn_frame.pack(fill='x', pady=5)
+                        
+                        def view_summary(file=archive_file):
+                            self.view_archive_summary(file)
+                        
+                        def export_pdf(file=archive_file, date=datetime(int(year), int(month), 1)):
+                            with open(file, 'r') as f:
+                                data = json.load(f)
+                                if not file.stem.startswith('archive_'):
+                                    data = {
+                                        'month_data': data,
+                                        'month_summary': {
+                                            'total_expenses': sum(exp['amount'] for exp in data['expenses']),
+                                            'category_totals': self._calculate_category_totals(data['expenses']),
+                                            'final_balances': data.get('balances', {}),
+                                            'expense_count': len(data['expenses'])
+                                        }
+                                    }
+                            self.export_monthly_archive(data, date)
+                        
+                        ctk.CTkButton(btn_frame,
+                                    text="View Details",
+                                    command=view_summary,
+                                    width=150).pack(side='left', padx=5)
+                        
+                        ctk.CTkButton(btn_frame,
+                                    text="Export PDF",
+                                    command=export_pdf,
+                                    width=150).pack(side='left', padx=5)
+                        
                 except Exception as e:
                     print(f"Error loading archive {archive_file}: {str(e)}")
-        
+            
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
@@ -1633,11 +1767,25 @@ class MonthlyKharcha:
         """Display summary of an archived month"""
         try:
             with open(archive_file, 'r') as f:
-                archive_data = json.load(f)
+                # Handle both regular and archive files
+                if archive_file.stem.startswith('archive_'):
+                    archive_data = json.load(f)
+                    year = archive_file.stem.split('_')[1]
+                    month = archive_file.stem.split('_')[2]
+                else:
+                    data = json.load(f)
+                    year, month = archive_file.stem.split('_')
+                    archive_data = {
+                        'month_data': data,
+                        'month_summary': {
+                            'total_expenses': sum(exp['amount'] for exp in data['expenses']),
+                            'category_totals': self._calculate_category_totals(data['expenses']),
+                            'final_balances': data.get('balances', {}),
+                            'expense_count': len(data['expenses'])
+                        }
+                    }
             
             summary_window = tk.Toplevel(self.window)
-            year = archive_file.stem.split('_')[1]
-            month = archive_file.stem.split('_')[2]
             month_name = datetime(int(year), int(month), 1).strftime("%B %Y")
             summary_window.title(f"Archive Summary - {month_name}")
             summary_window.geometry("800x600")
@@ -1716,6 +1864,109 @@ class MonthlyKharcha:
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load archive: {str(e)}")
 
+    def _calculate_category_totals(self, expenses):
+        """Helper method to calculate category totals"""
+        totals = defaultdict(float)
+        for expense in expenses:
+            totals[expense['category']] += expense['amount']
+        return dict(totals)
+
+    def export_monthly_archive(self, archive_data, date):
+        """Export monthly archive to PDF"""
+        try:
+            # Create PDF filename with timestamp
+            timestamp = date.strftime("%Y%m_%B")
+            pdf_path = self.data_dir / f"monthly_summary_{timestamp}.pdf"
+            
+            # Create PDF
+            c = canvas.Canvas(str(pdf_path), pagesize=letter)
+            width, height = letter
+            
+            # Title
+            c.setFont("Helvetica-Bold", 16)
+            y = height - 40
+            month_name = date.strftime("%B %Y")
+            c.drawString(40, y, f"Monthly Kharcha Summary - {month_name}")
+            y -= 30
+            
+            # Overview
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(40, y, "Monthly Overview")
+            y -= 20
+            
+            c.setFont("Helvetica", 10)
+            total = archive_data['month_summary']['total_expenses']
+            c.drawString(40, y, f"Total Expenses: ₨ {total:,.2f}")
+            y -= 15
+            c.drawString(40, y, f"Number of Transactions: {archive_data['month_summary']['expense_count']}")
+            y -= 30
+            
+            # Category breakdown
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(40, y, "Category Breakdown")
+            y -= 20
+            
+            c.setFont("Helvetica", 10)
+            for category, amount in archive_data['month_summary']['category_totals'].items():
+                if amount > 0:
+                    c.drawString(40, y, f"{category}: ₨ {amount:,.2f}")
+                    y -= 15
+                    if y < 50:  # New page if near bottom
+                        c.showPage()
+                        y = height - 40
+            y -= 15
+            
+            # Final balances
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(40, y, "Final Balances")
+            y -= 20
+            
+            c.setFont("Helvetica", 10)
+            for person, balance in archive_data['month_summary']['final_balances'].items():
+                status = "to receive" if balance > 0 else "to pay"
+                c.drawString(40, y, f"{person}: ₨ {abs(balance):,.2f} ({status})")
+                y -= 15
+                if y < 50:
+                    c.showPage()
+                    y = height - 40
+            y -= 15
+            
+            # Detailed transactions
+            c.showPage()  # Start transactions on new page
+            y = height - 40
+            
+            c.setFont("Helvetica-Bold", 12)
+            c.drawString(40, y, "Detailed Transactions")
+            y -= 20
+            
+            c.setFont("Helvetica", 10)
+            for expense in sorted(archive_data['month_data']['expenses'],
+                                key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d %H:%M:%S"),
+                                reverse=True):
+                if y < 100:  # Check if enough space for transaction
+                    c.showPage()
+                    y = height - 40
+                
+                c.drawString(40, y, f"Date: {expense['date']}")
+                y -= 15
+                c.drawString(40, y, f"Category: {expense['category']}")
+                y -= 15
+                c.drawString(40, y, f"Description: {expense['description']}")
+                y -= 15
+                c.drawString(40, y, f"Amount: ₨ {expense['amount']:,.2f}")
+                y -= 15
+                c.drawString(40, y, f"Paid by: {expense['paid_by']}")
+                y -= 15
+                c.drawString(40, y, f"Shared between: {', '.join(expense['shared_between'])}")
+                y -= 25
+            
+            c.save()
+            messagebox.showinfo("Success", 
+                              f"PDF exported successfully!\nSaved to:\n{pdf_path}")
+            
+        except Exception as e:
+            messagebox.showerror("Error", f"Failed to export PDF: {str(e)}")
+
     def run(self):
         """Start the application main loop"""
         try:
@@ -1723,10 +1974,13 @@ class MonthlyKharcha:
         except Exception as e:
             print(f"Error running application: {str(e)}")
 
-if __name__ == "__main__":
+# Add at the end of main.py
+def main():
     try:
-        # Create and run the application
         app = MonthlyKharcha()
         app.run()
     except Exception as e:
         print(f"Error starting application: {str(e)}")
+
+if __name__ == "__main__":
+    main()
