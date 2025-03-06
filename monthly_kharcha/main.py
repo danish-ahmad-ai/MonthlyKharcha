@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import ttk, messagebox, simpledialog
 import json
 import os
+import traceback  # Add this import
 from datetime import datetime
 from pathlib import Path
 from reportlab.pdfgen import canvas
@@ -10,7 +11,7 @@ import time
 from tkinter import font as tkfont
 import customtkinter as ctk
 import pandas as pd
-from sklearn.linear_model import LinearRegression
+from sklearn.linear_model import LinearRegression  # type: ignore
 from datetime import timedelta
 import numpy as np
 from collections import defaultdict
@@ -44,6 +45,7 @@ class MonthlyKharcha:
         self.expense_predictor = None
         
         # Setup themes first
+        
         self.setup_theme_settings()  # Add this line before _setup_styles
         self._setup_styles()
         
@@ -1277,7 +1279,7 @@ class MonthlyKharcha:
     
     def add_expense(self, category, description, amount, paid_by, shared_between, date):
         try:
-            # Try to evaluate the amount as a mathematical expression
+            # Validate and prepare expense data
             evaluated_amount = self.evaluate_expression(amount)
             if evaluated_amount is not None:
                 amount = evaluated_amount
@@ -1299,21 +1301,100 @@ class MonthlyKharcha:
                 'shared_between': sharing_people,
                 'date': date.strftime("%Y-%m-%d %H:%M:%S")
             }
+
+            # Determine which file to update based on the date
+            expense_date = date
+            current_date = datetime.now()
             
-            self.current_data['expenses'].append(expense)
-            self.update_balances()
-            self.save_data()
-            self.update_expense_list()
-            
-            # Update insights after adding expense
-            if hasattr(self, 'update_insights'):
-                self.update_insights()
-            
-            messagebox.showinfo("Success", f"Expense added successfully!\nAmount: ₨ {amount:,.2f}")
-            
+            # Check if expense is for current month
+            if (expense_date.year == current_date.year and 
+                expense_date.month == current_date.month):
+                # Add to current month's data
+                self.current_data['expenses'].append(expense)
+                self.update_balances()
+                self.save_data()
+                self.update_expense_list()
+                
+                if hasattr(self, 'update_insights'):
+                    self.update_insights()
+                    
+                messagebox.showinfo(
+                    "Success", 
+                    f"Expense added to current month!\nAmount: ₨ {amount:,.2f}"
+                )
+            else:
+                # Look for existing file for the target month
+                target_date = f"{expense_date.year}_{expense_date.month:02d}"
+                possible_files = [
+                    self.data_dir / f"{expense_date.year}_{expense_date.month:02d}.json",  # YYYY_MM.json
+                    self.data_dir / f"{expense_date.year}_{expense_date.month}.json",      # YYYY_M.json
+                    self.data_dir / f"archive_{expense_date.year}_{expense_date.month:02d}.json"  # archive_YYYY_MM.json
+                ]
+
+                target_file = None
+                for file in possible_files:
+                    if file.exists():
+                        target_file = file
+                        break
+
+                if not target_file:
+                    # Debug print
+                    print(f"Searched for files: {[str(f) for f in possible_files]}")
+                    print(f"Available files in directory: {list(self.data_dir.glob('*.json'))}")
+                    messagebox.showerror(
+                        "Error", 
+                        f"No existing data found for {expense_date.strftime('%B %Y')}.\n"
+                        "You can only add expenses to existing months."
+                    )
+                    return
+
+                try:
+                    # Load existing data
+                    with open(target_file, 'r') as f:
+                        month_data = json.load(f)
+
+                    # Add new expense
+                    month_data['expenses'].append(expense)
+
+                    # Recalculate balances
+                    balances = {name: 0 for name in month_data.get('roommates', self.roommates)}
+                    for exp in month_data['expenses']:
+                        paid_by_person = exp['paid_by']
+                        exp_amount = exp['amount']
+                        exp_sharing = exp['shared_between']
+                        share_per_person = exp_amount / len(exp_sharing)
+                        
+                        balances[paid_by_person] += exp_amount
+                        for person in exp_sharing:
+                            balances[person] -= share_per_person
+                        
+                    month_data['balances'] = balances
+
+                    # Save updated data back to the same file
+                    with open(target_file, 'w') as f:
+                        json.dump(month_data, f, indent=4)
+
+                    # Refresh archives display if it's open
+                    if hasattr(self, 'archive_window') and self.archive_window.winfo_exists():
+                        self.show_archives()
+
+                    messagebox.showinfo(
+                        "Success", 
+                        f"Expense added to {expense_date.strftime('%B %Y')}!\n"
+                        f"Amount: ₨ {amount:,.2f}"
+                    )
+
+                except Exception as e:
+                    messagebox.showerror(
+                        "Error",
+                        f"Failed to update {expense_date.strftime('%B %Y')} data: {str(e)}"
+                    )
+                    return
+
+            # Update summary if it's open
             if self.summary_text.get(1.0, tk.END).strip():
                 self.calculate_summary()
-            
+
         except ValueError as e:
             messagebox.showerror("Error", str(e))
     
@@ -1372,8 +1453,15 @@ class MonthlyKharcha:
         if name and name not in self.roommates:
             self.roommates.append(name)
             self.current_data['roommates'] = self.roommates
+            self.current_data['balances'][name] = 0  # Initialize balance for new roommate
             self.save_data()
             self.update_roommate_list()
+            self.update_graphs()  # Add this line to refresh graphs
+            self.update_balances()  # Update balances display
+            
+            # Refresh any open windows or displays
+            if hasattr(self, 'update_insights'):
+                self.update_insights()
     
     def remove_roommate(self):
         selection = self.roommate_listbox.curselection()
@@ -1657,29 +1745,74 @@ class MonthlyKharcha:
         canvas.create_window((0, 0), window=scrollable_frame, anchor="nw")
         canvas.configure(yscrollcommand=scrollbar.set)
         
-        # Get list of archive files - include both current month files and archive files
+        # Get list of all JSON files in the data directory
+        json_files = list(self.data_dir.glob("*.json"))
+        
+        # Debug print to see all files
+        print("Found JSON files:", [f.name for f in json_files])
+        
+        # Filter and organize files
         archive_files = []
+        current_date = datetime.now()
         
-        # Look for current month files (YYYY_MM.json)
-        current_files = list(self.data_dir.glob("[0-9][0-9][0-9][0-9]_[0-9][0-9].json"))
-        
-        # Look for archive files (archive_YYYY_MM.json)
-        archive_prefix_files = list(self.data_dir.glob("archive_[0-9][0-9][0-9][0-9]_[0-9][0-9].json"))
-        
-        archive_files.extend(current_files)
-        archive_files.extend(archive_prefix_files)
-        
+        for file in json_files:
+            try:
+                # Debug print for each file being processed
+                print(f"Processing file: {file.name}")
+                
+                # Check different file patterns
+                if re.match(r'^(\d{4})_(\d{1,2})\.json$', file.name):
+                    # Any month file (YYYY_M.json or YYYY_MM.json)
+                    year, month = map(int, file.stem.split('_'))
+                    print(f"Matched regular file pattern: {year}_{month}")
+                    archive_files.append(file)
+                elif re.match(r'^archive_\d{4}_\d{2}\.json$', file.name):
+                    # Archive files (archive_YYYY_MM.json)
+                    print(f"Matched archive file pattern: {file.name}")
+                    archive_files.append(file)
+            except Exception as e:
+                print(f"Error processing file {file}: {str(e)}")
+                traceback.print_exc()
+                continue
+
+        # Debug print archive files found
+        print("Archive files found:", [f.name for f in archive_files])
+
         # Sort files by date (newest first)
         def get_date_from_filename(filename):
-            parts = filename.stem.split('_')
-            if parts[0] == 'archive':
-                year, month = int(parts[1]), int(parts[2])
-            else:
-                year, month = int(parts[0]), int(parts[1])
-            return datetime(year, month, 1)
-        
+            try:
+                match = re.match(r'^(?:archive_)?(\d{4})_(\d{1,2})\.json$', filename.name)
+                if match:
+                    year, month = map(int, match.groups())
+                    return datetime(year, month, 1)
+                return datetime(1900, 1, 1)  # Return old date for invalid files
+            except Exception as e:
+                print(f"Error parsing date from filename {filename}: {str(e)}")
+                return datetime(1900, 1, 1)
+
+        # Sort and remove duplicates
         archive_files.sort(key=get_date_from_filename, reverse=True)
         
+        # Debug print sorted files
+        print("Sorted archive files:", [f.name for f in archive_files])
+        
+        # Remove duplicates by keeping only the most recent version for each month
+        seen_months = set()
+        unique_archives = []
+        for file in archive_files:
+            try:
+                date = get_date_from_filename(file)
+                month_key = f"{date.year}_{date.month}"
+                if month_key not in seen_months:
+                    seen_months.add(month_key)
+                    unique_archives.append(file)
+                    print(f"Added unique archive: {file.name} for {month_key}")
+            except Exception as e:
+                print(f"Error processing file for deduplication {file}: {str(e)}")
+                continue
+
+        archive_files = unique_archives
+
         if not archive_files:
             ttk.Label(scrollable_frame,
                      text="No archives found",
@@ -1689,6 +1822,8 @@ class MonthlyKharcha:
             for archive_file in archive_files:
                 try:
                     with open(archive_file, 'r') as f:
+                        print(f"Loading file: {archive_file.name}")
+                        # Handle both regular and archive files
                         if archive_file.stem.startswith('archive_'):
                             archive_data = json.load(f)
                             year = archive_file.stem.split('_')[1]
@@ -1699,72 +1834,74 @@ class MonthlyKharcha:
                             archive_data = {
                                 'month_data': data,
                                 'month_summary': {
-                                    'total_expenses': sum(exp['amount'] for exp in data['expenses']),
-                                    'category_totals': self._calculate_category_totals(data['expenses']),
+                                    'total_expenses': sum(exp['amount'] for exp in data.get('expenses', [])),
+                                    'category_totals': self._calculate_category_totals(data.get('expenses', [])),
                                     'final_balances': data.get('balances', {}),
-                                    'expense_count': len(data['expenses'])
+                                    'expense_count': len(data.get('expenses', []))
                                 }
                             }
                         
-                        month_name = datetime(int(year), int(month), 1).strftime("%B %Y")
-                        
-                        # Create card frame
-                        card = ttk.Frame(scrollable_frame, style="Card.TFrame")
-                        card.pack(fill='x', pady=10, padx=10)
-                        
-                        # Month and total
-                        header_frame = ttk.Frame(card)
-                        header_frame.pack(fill='x', pady=5)
-                        
-                        ttk.Label(header_frame,
-                                 text=month_name,
-                                 style="SubHeader.TLabel").pack(side='left', padx=10)
-                        
-                        total = archive_data['month_summary']['total_expenses']
-                        ttk.Label(header_frame,
-                                 text=f"Total: ₨ {total:,.2f}",
-                                 style="Amount.TLabel").pack(side='right', padx=10)
-                        
-                        # Action buttons
-                        btn_frame = ttk.Frame(card)
-                        btn_frame.pack(fill='x', pady=5)
-                        
-                        def view_summary(file=archive_file):
-                            self.view_archive_summary(file)
-                        
-                        def export_pdf(file=archive_file, date=datetime(int(year), int(month), 1)):
-                            with open(file, 'r') as f:
-                                data = json.load(f)
-                                if not file.stem.startswith('archive_'):
-                                    data = {
-                                        'month_data': data,
-                                        'month_summary': {
-                                            'total_expenses': sum(exp['amount'] for exp in data['expenses']),
-                                            'category_totals': self._calculate_category_totals(data['expenses']),
-                                            'final_balances': data.get('balances', {}),
-                                            'expense_count': len(data['expenses'])
-                                        }
-                                    }
-                            self.export_monthly_archive(data, date)
-                        
-                        ctk.CTkButton(btn_frame,
-                                    text="View Details",
-                                    command=view_summary,
-                                    width=150).pack(side='left', padx=5)
-                        
-                        ctk.CTkButton(btn_frame,
-                                    text="Export PDF",
-                                    command=export_pdf,
-                                    width=150).pack(side='left', padx=5)
+                        # Create and display card
+                        self._create_archive_card(
+                            scrollable_frame, 
+                            archive_data, 
+                            archive_file, 
+                            int(year), 
+                            int(month)
+                        )
+                        print(f"Successfully created card for: {archive_file.name}")
                         
                 except Exception as e:
                     print(f"Error loading archive {archive_file}: {str(e)}")
-            
+                    traceback.print_exc()
+        
         canvas.pack(side="left", fill="both", expand=True)
         scrollbar.pack(side="right", fill="y")
 
+    def _create_archive_card(self, parent_frame, archive_data, archive_file, year, month):
+        """Helper method to create archive cards"""
+        try:
+            month_name = datetime(year, month, 1).strftime("%B %Y")
+            
+            # Create card frame
+            card = ttk.Frame(parent_frame, style="Card.TFrame")
+            card.pack(fill='x', pady=10, padx=10)
+            
+            # Month and total
+            header_frame = ttk.Frame(card)
+            header_frame.pack(fill='x', pady=5)
+            
+            ttk.Label(header_frame,
+                     text=month_name,
+                     style="SubHeader.TLabel").pack(side='left', padx=10)
+            
+            total = archive_data['month_summary']['total_expenses']
+            ttk.Label(header_frame,
+                     text=f"Total: ₨ {total:,.2f}",
+                     style="Amount.TLabel").pack(side='right', padx=10)
+            
+            # Action buttons
+            btn_frame = ttk.Frame(card)
+            btn_frame.pack(fill='x', pady=5)
+            
+            ctk.CTkButton(btn_frame,
+                        text="View Details",
+                        command=lambda: self.view_archive_summary(archive_file),
+                        width=150).pack(side='left', padx=5)
+            
+            ctk.CTkButton(btn_frame,
+                        text="Export PDF",
+                        command=lambda: self.export_monthly_archive(
+                            archive_data, 
+                            datetime(year, month, 1)
+                        ),
+                        width=150).pack(side='left', padx=5)
+        except Exception as e:
+            print(f"Error creating archive card: {str(e)}")
+            traceback.print_exc()
+
     def view_archive_summary(self, archive_file):
-        """Display summary of an archived month"""
+        """Display summary of an archived month with editable expenses"""
         try:
             with open(archive_file, 'r') as f:
                 # Handle both regular and archive files
@@ -1788,7 +1925,7 @@ class MonthlyKharcha:
             summary_window = tk.Toplevel(self.window)
             month_name = datetime(int(year), int(month), 1).strftime("%B %Y")
             summary_window.title(f"Archive Summary - {month_name}")
-            summary_window.geometry("800x600")
+            summary_window.geometry("1000x800")
             
             # Make window modal
             summary_window.transient(self.window)
@@ -1803,8 +1940,20 @@ class MonthlyKharcha:
                      text=f"Monthly Summary - {month_name}",
                      style="Header.TLabel").pack(pady=(0, 20))
             
-            # Summary text widget with scrollbar
-            text_frame = ttk.Frame(main_frame)
+            # Create notebook for tabs
+            notebook = ttk.Notebook(main_frame)
+            notebook.pack(fill='both', expand=True)
+            
+            # Summary tab
+            summary_tab = ttk.Frame(notebook)
+            notebook.add(summary_tab, text="Summary")
+            
+            # Expenses tab
+            expenses_tab = ttk.Frame(notebook)
+            notebook.add(expenses_tab, text="Edit Expenses")
+            
+            # Setup Summary Tab
+            text_frame = ttk.Frame(summary_tab)
             text_frame.pack(fill='both', expand=True)
             
             scrollbar = ttk.Scrollbar(text_frame)
@@ -1834,7 +1983,8 @@ class MonthlyKharcha:
             summary.append("-" * 20)
             for category, amount in month_summary['category_totals'].items():
                 if amount > 0:
-                    summary.append(f"{category}: ₨ {amount:,.2f}")
+                    percentage = (amount / month_summary['total_expenses']) * 100 if month_summary['total_expenses'] > 0 else 0
+                    summary.append(f"{category}: ₨ {amount:,.2f} ({percentage:.1f}%)")
             summary.append("")
             
             # Final balances
@@ -1861,8 +2011,226 @@ class MonthlyKharcha:
             text_widget.insert(tk.END, "\n".join(summary))
             text_widget.config(state='disabled')  # Make read-only
             
+            # Setup Expenses Tab
+            expenses_frame = ttk.Frame(expenses_tab, padding=10)
+            expenses_frame.pack(fill='both', expand=True)
+            
+            # Create treeview for expenses
+            columns = ('Date', 'Category', 'Description', 'Amount', 'Paid By', 'Shared Between')
+            expense_tree = ttk.Treeview(expenses_frame, columns=columns, show='headings')
+            
+            # Configure columns
+            for col in columns:
+                expense_tree.heading(col, text=col)
+                expense_tree.column(col, width=100)
+            
+            # Add scrollbar
+            tree_scrollbar = ttk.Scrollbar(expenses_frame, orient="vertical", command=expense_tree.yview)
+            expense_tree.configure(yscrollcommand=tree_scrollbar.set)
+            
+            # Pack tree and scrollbar
+            expense_tree.pack(side='left', fill='both', expand=True)
+            tree_scrollbar.pack(side='right', fill='y')
+            
+            # Add expenses to tree
+            for expense in sorted(month_data['expenses'],
+                                key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d %H:%M:%S"),
+                                reverse=True):
+                expense_tree.insert('', 'end', values=(
+                    expense['date'],
+                    expense['category'],
+                    expense['description'],
+                    f"₨ {expense['amount']:,.2f}",
+                    expense['paid_by'],
+                    ', '.join(expense['shared_between'])
+                ))
+            
+            # Button frame
+            button_frame = ttk.Frame(expenses_frame)
+            button_frame.pack(pady=10)
+            
+            def edit_archived_expense():
+                selected = expense_tree.selection()
+                if not selected:
+                    messagebox.showwarning("No Selection", "Please select an expense to edit")
+                    return
+                
+                # Get selected expense
+                item = selected[0]
+                values = expense_tree.item(item)['values']
+                
+                # Find the expense in the data
+                expense_date = values[0]
+                expense_desc = values[2]
+                target_expense = None
+                expense_index = None
+                
+                for i, expense in enumerate(month_data['expenses']):
+                    if (expense['date'] == expense_date and 
+                        expense['description'] == expense_desc):
+                        target_expense = expense
+                        expense_index = i
+                        break
+                
+                if target_expense is None:
+                    messagebox.showerror("Error", "Could not find expense")
+                    return
+                
+                # Create edit window
+                edit_window = tk.Toplevel(summary_window)
+                edit_window.title("Edit Archived Expense")
+                edit_window.geometry("500x600")
+                edit_window.transient(summary_window)
+                edit_window.grab_set()
+                
+                edit_frame = ttk.Frame(edit_window, padding=20)
+                edit_frame.pack(fill='both', expand=True)
+                
+                # Create form fields
+                ttk.Label(edit_frame, text="Date:").pack(anchor='w')
+                date_entry = DateEntry(edit_frame, width=30,
+                                      background=self.colors['primary'],
+                                      foreground='white')
+                current_date = datetime.strptime(target_expense['date'], "%Y-%m-%d %H:%M:%S")
+                date_entry.set_date(current_date)
+                date_entry.pack(fill='x', pady=5)
+                
+                ttk.Label(edit_frame, text="Category:").pack(anchor='w')
+                category_cb = ttk.Combobox(edit_frame, values=self.categories)
+                category_cb.set(target_expense['category'])
+                category_cb.pack(fill='x', pady=5)
+                
+                ttk.Label(edit_frame, text="Description:").pack(anchor='w')
+                desc_entry = ttk.Entry(edit_frame)
+                desc_entry.insert(0, target_expense['description'])
+                desc_entry.pack(fill='x', pady=5)
+                
+                ttk.Label(edit_frame, text="Amount:").pack(anchor='w')
+                amount_entry = ttk.Entry(edit_frame)
+                amount_entry.insert(0, str(target_expense['amount']))
+                amount_entry.pack(fill='x', pady=5)
+                
+                ttk.Label(edit_frame, text="Paid By:").pack(anchor='w')
+                paid_by_cb = ttk.Combobox(edit_frame, values=self.roommates)
+                paid_by_cb.set(target_expense['paid_by'])
+                paid_by_cb.pack(fill='x', pady=5)
+                
+                ttk.Label(edit_frame, text="Shared Between:").pack(anchor='w')
+                shared_frame = ttk.Frame(edit_frame)
+                shared_frame.pack(fill='x', pady=5)
+                
+                shared_vars = {}
+                for name in self.roommates:
+                    shared_vars[name] = tk.BooleanVar(value=name in target_expense['shared_between'])
+                    ttk.Checkbutton(shared_frame, text=name, 
+                                  variable=shared_vars[name]).pack(side='left', padx=5)
+                
+                def save_archived_changes():
+                    try:
+                        # Validate amount
+                        amount = float(amount_entry.get())
+                        
+                        # Get shared between list
+                        shared_between = [name for name, var in shared_vars.items() if var.get()]
+                        if not shared_between:
+                            raise ValueError("At least one person must share the expense")
+                        
+                        # Update expense
+                        month_data['expenses'][expense_index] = {
+                            'category': category_cb.get(),
+                            'description': desc_entry.get(),
+                            'amount': amount,
+                            'paid_by': paid_by_cb.get(),
+                            'shared_between': shared_between,
+                            'date': date_entry.get_date().strftime("%Y-%m-%d %H:%M:%S")
+                        }
+                        
+                        # Recalculate summary
+                        month_summary['total_expenses'] = sum(exp['amount'] for exp in month_data['expenses'])
+                        month_summary['category_totals'] = self._calculate_category_totals(month_data['expenses'])
+                        
+                        # Save changes back to file
+                        with open(archive_file, 'w') as f:
+                            if archive_file.stem.startswith('archive_'):
+                                json.dump(archive_data, f, indent=4)
+                            else:
+                                json.dump(month_data, f, indent=4)
+                        
+                        # Update tree view
+                        expense_tree.delete(*expense_tree.get_children())
+                        for exp in sorted(month_data['expenses'],
+                                        key=lambda x: datetime.strptime(x['date'], "%Y-%m-%d %H:%M:%S"),
+                                        reverse=True):
+                            expense_tree.insert('', 'end', values=(
+                                exp['date'],
+                                exp['category'],
+                                exp['description'],
+                                f"₨ {exp['amount']:,.2f}",
+                                exp['paid_by'],
+                                ', '.join(exp['shared_between'])
+                            ))
+                        
+                        edit_window.destroy()
+                        messagebox.showinfo("Success", "Archived expense updated successfully!")
+                        
+                    except ValueError as e:
+                        messagebox.showerror("Error", str(e))
+                
+                # Buttons
+                btn_frame = ttk.Frame(edit_frame)
+                btn_frame.pack(pady=20)
+                
+                ttk.Button(btn_frame, text="Save Changes", 
+                          command=save_archived_changes).pack(side='left', padx=5)
+                ttk.Button(btn_frame, text="Cancel", 
+                          command=edit_window.destroy).pack(side='left', padx=5)
+            
+            def delete_archived_expense():
+                selected = expense_tree.selection()
+                if not selected:
+                    messagebox.showwarning("No Selection", "Please select an expense to delete")
+                    return
+                
+                if not messagebox.askyesno("Confirm Delete", 
+                                          "Are you sure you want to delete this expense from the archive?"):
+                    return
+                
+                item = selected[0]
+                values = expense_tree.item(item)['values']
+                
+                # Find and remove the expense
+                expense_date = values[0]
+                expense_desc = values[2]
+                
+                for i, expense in enumerate(month_data['expenses']):
+                    if (expense['date'] == expense_date and 
+                        expense['description'] == expense_desc):
+                        month_data['expenses'].pop(i)
+                        
+                        # Update file
+                        with open(archive_file, 'w') as f:
+                            if archive_file.stem.startswith('archive_'):
+                                json.dump(archive_data, f, indent=4)
+                            else:
+                                json.dump(month_data, f, indent=4)
+                        
+                        # Update tree
+                        expense_tree.delete(item)
+                        messagebox.showinfo("Success", "Archived expense deleted successfully!")
+                        return
+                
+                messagebox.showerror("Error", "Could not find expense to delete")
+            
+            # Add Edit and Delete buttons
+            ttk.Button(button_frame, text="Edit Selected", 
+                      command=edit_archived_expense).pack(side='left', padx=5)
+            ttk.Button(button_frame, text="Delete Selected", 
+                      command=delete_archived_expense).pack(side='left', padx=5)
+        
         except Exception as e:
             messagebox.showerror("Error", f"Failed to load archive: {str(e)}")
+            print(f"Error in view_archive_summary: {str(e)}")
+            traceback.print_exc()
 
     def _calculate_category_totals(self, expenses):
         """Helper method to calculate category totals"""
